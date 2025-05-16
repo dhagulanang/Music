@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Aplikasi Musik Pastel</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #fcefee;
+      color: #333;
+      display: flex;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .app {
+      background: #fff0f5;
+      border-radius: 1rem;
+      padding: 2rem;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      text-align: center;
+      color: #d48fa1;
+    }
+
+    #fileInput {
+      display: block;
+      margin: 1rem auto;
+    }
+
+    #playlist {
+      margin-top: 1rem;
+    }
+
+    .playlist-category {
+      margin-bottom: 1rem;
+    }
+
+    .playlist-title {
+      font-weight: bold;
+      color: #b66a80;
+      margin-bottom: 0.5rem;
+    }
+
+    .track {
+      padding: 0.5rem;
+      background: #fde6e8;
+      margin-bottom: 0.5rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .track:hover {
+      background: #fcd3d8;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    .history {
+      margin-top: 2rem;
+    }
+
+    .drop-area {
+      border: 2px dashed #d48fa1;
+      padding: 1rem;
+      text-align: center;
+      border-radius: 0.5rem;
+      background: #fff5f7;
+      margin-top: 1rem;
+    }
+
+    .time {
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+      text-align: right;
+      color: #777;
+    }
+
+    button {
+      background-color: #d48fa1;
+      border: none;
+      color: white;
+      padding: 0.3rem 0.8rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #c06882;
+    }
+
+    input[type="range"] {
+      width: 100px;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Musikku</h1>
+    <input type="file" id="fileInput" accept="audio/*" multiple />
+    <div class="drop-area" id="dropArea">Atau drag & drop file musik di sini</div>
+    
+    <div id="playlist"></div>
+    
+    <audio id="audioPlayer" controls style="width: 100%; margin-top: 1rem;"></audio>
+    <div class="time" id="timeInfo">00:00 / 00:00</div>
+
+    <div class="controls">
+      <button id="shuffleBtn">Shuffle</button>
+      <button id="repeatBtn">Repeat: Off</button>
+      <input type="range" id="volumeControl" min="0" max="1" step="0.01">
+      <button id="muteBtn">Mute</button>
+    </div>
+
+    <div class="history">
+      <h3>Riwayat</h3>
+      <ul id="historyList"></ul>
+    </div>
+  </div>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const dropArea = document.getElementById('dropArea');
+  const playlist = document.getElementById('playlist');
+  const audioPlayer = document.getElementById('audioPlayer');
+  const historyList = document.getElementById('historyList');
+  const shuffleBtn = document.getElementById('shuffleBtn');
+  const repeatBtn = document.getElementById('repeatBtn');
+  const volumeControl = document.getElementById('volumeControl');
+  const muteBtn = document.getElementById('muteBtn');
+  const timeInfo = document.getElementById('timeInfo');
+
+  let currentPlaylist = [];
+  let shuffle = false;
+  let repeatMode = 0; // 0: off, 1: one, 2: all
+
+  const kategoriMap = {
+    'Lofi': ['lofi', 'chill'],
+    'Pop': ['pop'],
+    'Instrumental': ['instrumental', 'inst'],
+    'Lainnya': []
+  };
+
+  function deteksiKategori(namaLagu) {
+    namaLagu = namaLagu.toLowerCase();
+    for (const [kategori, keyword] of Object.entries(kategoriMap)) {
+      if (keyword.some(k => namaLagu.includes(k))) {
+        return kategori;
+      }
+    }
+    return 'Lainnya';
+  }
+
+  function buatPlaylistKategori() {
+    playlist.innerHTML = '';
+    for (const kategori in kategoriMap) {
+      const div = document.createElement('div');
+      div.className = 'playlist-category';
+
+      const title = document.createElement('div');
+      title.className = 'playlist-title';
+      title.textContent = kategori;
+      div.appendChild(title);
+
+      const trackList = document.createElement('div');
+      trackList.id = `list-${kategori}`;
+      div.appendChild(trackList);
+
+      playlist.appendChild(div);
+    }
+  }
+
+  function tampilkanWaktu() {
+    const current = formatWaktu(audioPlayer.currentTime);
+    const total = formatWaktu(audioPlayer.duration || 0);
+    timeInfo.textContent = `${current} / ${total}`;
+  }
+
+  function formatWaktu(waktu) {
+    const m = Math.floor(waktu / 60).toString().padStart(2, '0');
+    const s = Math.floor(waktu % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function tambahKeRiwayat(nama) {
+    const li = document.createElement('li');
+    li.textContent = nama;
+    historyList.prepend(li);
+    if (historyList.childNodes.length > 10) {
+      historyList.removeChild(historyList.lastChild);
+    }
+  }
+
+  function simpanKeLocal(files) {
+    const cache = files.map(f => f.name);
+    localStorage.setItem('lastPlaylist', JSON.stringify(cache));
+  }
+
+  function muatDariInput(files) {
+    currentPlaylist = [];
+    buatPlaylistKategori();
+
+    Array.from(files).forEach((file) => {
+      const kategori = deteksiKategori(file.name);
+      const track = document.createElement('div');
+      track.classList.add('track');
+      track.textContent = file.name;
+
+      track.addEventListener('click', () => {
+        audioPlayer.src = URL.createObjectURL(file);
+        audioPlayer.play();
+        tambahKeRiwayat(file.name);
+      });
+
+      const trackList = document.getElementById(`list-${kategori}`);
+      if (trackList) {
+        trackList.appendChild(track);
+      }
+
+      currentPlaylist.push({ file, name: file.name });
+    });
+
+    simpanKeLocal(currentPlaylist.map(t => t.file));
+  }
+
+  fileInput.addEventListener('change', () => {
+    muatDariInput(fileInput.files);
+  });
+
+  dropArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropArea.style.backgroundColor = "#fcd3d8";
+  });
+
+  dropArea.addEventListener('dragleave', () => {
+    dropArea.style.backgroundColor = "#fff5f7";
+  });
+
+  dropArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropArea.style.backgroundColor = "#fff5f7";
+    muatDariInput(e.dataTransfer.files);
+  });
+
+  shuffleBtn.addEventListener('click', () => {
+    shuffle = !shuffle;
+    shuffleBtn.textContent = shuffle ? 'Shuffle: On' : 'Shuffle: Off';
+  });
+
+  repeatBtn.addEventListener('click', () => {
+    repeatMode = (repeatMode + 1) % 3;
+    const modeText = ['Repeat: Off', 'Repeat: One', 'Repeat: All'];
+    repeatBtn.textContent = modeText[repeatMode];
+  });
+
+  volumeControl.addEventListener('input', () => {
+    audioPlayer.volume = volumeControl.value;
+  });
+
+  muteBtn.addEventListener('click', () => {
+    audioPlayer.muted = !audioPlayer.muted;
+    muteBtn.textContent = audioPlayer.muted ? 'Unmute' : 'Mute';
+  });
+
+  audioPlayer.addEventListener('ended', () => {
+    if (repeatMode === 1) {
+      audioPlayer.currentTime = 0;
+      audioPlayer.play();
+    } else if (repeatMode === 2 && currentPlaylist.length > 0) {
+      const nextIndex = (Math.floor(Math.random() * currentPlaylist.length));
+      const next = currentPlaylist[nextIndex];
+      audioPlayer.src = URL.createObjectURL(next.file);
+      audioPlayer.play();
+      tambahKeRiwayat(next.name);
+    }
+  });
+
+  setInterval(tampilkanWaktu, 500);
+</script>
+</body>
+</html>
